@@ -1,15 +1,19 @@
 import { Box, RevoluteJoint } from "planck";
 import type { Body, World } from "planck";
 import { Limb } from "./Limb";
+import type { LimbSignals } from "./Limb";
+import { SignalBus } from "./SignalBus";
 
-// The numbers that describe a horse's body. Later these will come from a genome.
+// The numbers that describe a horse's body and gait. Later these will come from a genome.
 export interface HorseDna {
   torsoLength: number; // meters
   torsoHeight: number; // meters
-  legLength: number; // meters
+  legLength: number; // meters (upper + lower leg)
   legThickness: number; // meters
-  stance: number; // radians: front leg tilts forward, rear leg tilts back
+  stance: number; // radians: standing pose, front leg tilts forward, rear leg back
   muscle: number; // multiplier for how much torque the joints can produce
+  hipSwing: number; // radians the hip swings each way while moving
+  kneeBend: number; // radians the knee folds during the recovery stroke
 }
 
 export const DEFAULT_DNA: HorseDna = {
@@ -18,8 +22,19 @@ export const DEFAULT_DNA: HorseDna = {
   legLength: 1.2,
   legThickness: 0.14,
   stance: 0.15,
-  muscle: 1.0,
+  muscle: 2.0,
+  hipSwing: 0.25,
+  kneeBend: 0.6,
 };
+
+// Signal wiring for a two-legged gait. Chain of events:
+//   front power stroke + rear recovery start together,
+//   each finish triggers the other leg's opposite phase, and the cycle repeats.
+const FRONT_SIGNALS: LimbSignals = { ftobReact: 4, ftobEvent: 1, btofReact: 2, btofEvent: 3 };
+const REAR_SIGNALS: LimbSignals = { ftobReact: 1, ftobEvent: 4, btofReact: 3, btofEvent: 2 };
+
+const DENSITY = 40; // kg per square meter (the world is 2D)
+const NO_SELF_COLLISION = -1; // fixtures that share a negative group never collide
 
 // One box-shaped piece of the horse, kept so the renderer knows what to draw.
 // (cx, cy, angle) place the box relative to its body.
@@ -33,15 +48,15 @@ export interface Part {
   color: string;
 }
 
-const NO_SELF_COLLISION = -1; // fixtures that share a negative group never collide
-
 export class PhysicsHorse {
   readonly torso: Body;
   readonly parts: Part[] = [];
   readonly limbs: Limb[] = [];
+  private readonly bodies: Body[] = [];
+  private readonly bus = new SignalBus();
 
   constructor(world: World, x: number, groundY: number, dna: HorseDna) {
-    const { torsoLength, torsoHeight, legLength, legThickness, stance, muscle } = dna;
+    const { torsoLength, torsoHeight, legLength, stance, muscle } = dna;
 
     // Start with the feet just above the ground (the leg tilt shortens its reach a bit).
     const hipY = groundY + legLength * Math.cos(stance) + 0.02;
@@ -49,17 +64,24 @@ export class PhysicsHorse {
 
     // --- Torso (also carries a simple rigid neck and head for now) ---
     this.torso = world.createBody({ type: "dynamic", position: { x, y: torsoY } });
+    this.bodies.push(this.torso);
     this.addBox(this.torso, torsoLength / 2, torsoHeight / 2, 0, 0, 0, "#c47a3a");
-    // neck: a tilted box rising from the front of the torso
     this.addBox(this.torso, 0.1, 0.45, torsoLength / 2 - 0.1, torsoHeight / 2 + 0.3, -0.5, "#c47a3a");
-    // head
     this.addBox(this.torso, 0.3, 0.14, torsoLength / 2 + 0.35, torsoHeight / 2 + 0.6, -0.2, "#a8642c");
 
     // --- Two legs: one near the front of the torso, one near the rear ---
     const hipOffset = torsoLength / 2 - 0.2;
-    const torque = muscle * 60;
-    this.addLeg(world, x + hipOffset, hipY, stance, legLength, legThickness, torque);
-    this.addLeg(world, x - hipOffset, hipY, -stance, legLength, legThickness, torque);
+    this.addLeg(world, x + hipOffset, hipY, stance, dna, FRONT_SIGNALS);
+    this.addLeg(world, x - hipOffset, hipY, -stance, dna, REAR_SIGNALS);
+
+    // Muscle strength scales with the horse's weight, so a heavier horse isn't automatically weaker.
+    let totalMass = 0;
+    for (const body of this.bodies) totalMass += body.getMass();
+    const hipTorque = muscle * totalMass * 10 * legLength * 0.5;
+    for (const limb of this.limbs) {
+      limb.hip.setMaxMotorTorque(hipTorque);
+      limb.knee.setMaxMotorTorque(hipTorque * 0.6);
+    }
   }
 
   private addLeg(
@@ -67,34 +89,46 @@ export class PhysicsHorse {
     hipX: number,
     hipY: number,
     angle: number,
-    length: number,
-    thickness: number,
-    torque: number,
+    dna: HorseDna,
+    signals: LimbSignals,
   ): void {
-    // The leg body's origin sits at the hip, so rotating the body swings the leg around the hip.
-    const leg = world.createBody({ type: "dynamic", position: { x: hipX, y: hipY }, angle });
-    this.addBox(leg, thickness / 2, length / 2, 0, -length / 2, 0, "#7a4a22", 1.0);
+    const { legLength, legThickness } = dna;
+    const segment = legLength / 2;
 
-    const joint = world.createJoint(
+    // Upper leg: its origin sits at the hip, so rotating the body swings the leg around the hip.
+    const upper = world.createBody({ type: "dynamic", position: { x: hipX, y: hipY }, angle });
+    this.bodies.push(upper);
+    this.addBox(upper, legThickness / 2, segment / 2, 0, -segment / 2, 0, "#7a4a22", 0.6);
+
+    // Lower leg: its origin sits at the knee, which is at the end of the upper leg.
+    const kneeX = hipX + segment * Math.sin(angle);
+    const kneeY = hipY - segment * Math.cos(angle);
+    const lower = world.createBody({ type: "dynamic", position: { x: kneeX, y: kneeY }, angle });
+    this.bodies.push(lower);
+    this.addBox(lower, legThickness / 2, segment / 2, 0, -segment / 2, 0, "#5e3a1a", 1.0);
+
+    const hip = world.createJoint(
       new RevoluteJoint(
-        {
-          enableLimit: true,
-          lowerAngle: -0.9,
-          upperAngle: 0.9,
-          enableMotor: true,
-          maxMotorTorque: torque,
-          motorSpeed: 0,
-        },
+        { enableLimit: true, lowerAngle: -0.9, upperAngle: 0.9, enableMotor: true, maxMotorTorque: 100, motorSpeed: 0 },
         this.torso,
-        leg,
+        upper,
         { x: hipX, y: hipY },
       ),
     );
-    if (!joint) {
-      throw new Error("Could not create hip joint");
+    // The knee only bends one way: the foot folds backward (negative angle).
+    const knee = world.createJoint(
+      new RevoluteJoint(
+        { enableLimit: true, lowerAngle: -1.8, upperAngle: 0.05, enableMotor: true, maxMotorTorque: 100, motorSpeed: 0 },
+        upper,
+        lower,
+        { x: kneeX, y: kneeY },
+      ),
+    );
+    if (!hip || !knee) {
+      throw new Error("Could not create leg joints");
     }
 
-    this.limbs.push(new Limb(joint, angle, 12));
+    this.limbs.push(new Limb(hip, knee, angle, signals, dna.hipSwing, dna.kneeBend));
   }
 
   private addBox(
@@ -108,16 +142,23 @@ export class PhysicsHorse {
     friction = 0.6,
   ): void {
     body.createFixture(new Box(halfW, halfH, { x: cx, y: cy }, angle), {
-      density: 1,
+      density: DENSITY,
       friction,
       filterGroupIndex: NO_SELF_COLLISION,
     });
     this.parts.push({ body, halfW, halfH, cx, cy, angle, color });
   }
 
-  update(): void {
+  // Kick off the gait. Stands in for the neck's "master clock" until the neck is a real limb.
+  start(): void {
+    this.bus.emit(3);
+    this.bus.emit(4);
+  }
+
+  update(dt: number): void {
+    this.bus.tick();
     for (const limb of this.limbs) {
-      limb.update();
+      limb.update(this.bus, dt);
     }
   }
 }
