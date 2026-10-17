@@ -1,5 +1,6 @@
 import { Edge, World } from "planck";
 import type { Mode } from "../core/Mode";
+import { drawHorse } from "../render/drawHorse";
 import { decodeGenome, randomGenome } from "../genome/Genome";
 import type { Genome } from "../genome/Genome";
 import { PhysicsHorse } from "../physics/PhysicsHorse";
@@ -90,16 +91,8 @@ export class HorseTestMode implements Mode {
       ctx.fillText(`${m} m`, sx - 12, groundScreenY + 32);
     }
 
-    // World to screen: x is shifted so the camera follows the horse, y is flipped (physics y points up).
-    for (const part of this.horse.parts) {
-      const p = part.body.getWorldPoint({ x: part.cx, y: part.cy });
-      ctx.save();
-      ctx.translate(width / 2 + (p.x - camX) * S, groundScreenY - p.y * S);
-      ctx.rotate(-(part.body.getAngle() + part.angle));
-      ctx.fillStyle = part.color;
-      ctx.fillRect(-part.halfW * S, -part.halfH * S, part.halfW * 2 * S, part.halfH * 2 * S);
-      ctx.restore();
-    }
+    // The camera follows the horse: shift x so the horse stays in the middle of the screen.
+    drawHorse(ctx, this.horse, width / 2 - camX * S, groundScreenY, S);
 
     const tiltDeg = (this.horse.torso.getAngle() * 180) / Math.PI;
     const phases = this.horse.limbs.map((l) => l.phase).join(" / ");

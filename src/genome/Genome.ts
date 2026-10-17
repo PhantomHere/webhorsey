@@ -23,6 +23,8 @@ const GENES: GeneSpec[] = [
   { key: "kneeBend", min: 0.3, max: 1.1 },
   { key: "stiffness", min: 6, max: 16 },
   { key: "hue", min: 0, max: 360 }, // cosmetic: body color
+  { key: "earSize", min: 0.12, max: 0.32 }, // cosmetic
+  { key: "tailLength", min: 0.4, max: 1.1 }, // cosmetic
 ];
 
 export const GENE_COUNT = GENES.length;

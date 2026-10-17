@@ -16,6 +16,8 @@ export interface HorseDna {
   kneeBend: number; // radians the knee folds during the recovery stroke
   stiffness: number; // how fast the joint motors chase their targets (gait speed)
   hue: number; // body color, 0-360 (cosmetic)
+  earSize: number; // ear height in meters (cosmetic)
+  tailLength: number; // tail length in meters (cosmetic)
 }
 
 export const DEFAULT_DNA: HorseDna = {
@@ -29,6 +31,8 @@ export const DEFAULT_DNA: HorseDna = {
   kneeBend: 0.6,
   stiffness: 12,
   hue: 25,
+  earSize: 0.2,
+  tailLength: 0.7,
 };
 
 // Signal wiring for a two-legged gait. Chain of events:
@@ -56,7 +60,10 @@ export interface Part {
 
 export class PhysicsHorse {
   readonly torso: Body;
-  readonly parts: Part[] = [];
+  readonly parts: Part[] = []; // the physical pieces
+  // Cosmetic pieces (ears, eye, mouth, tail). They have no fixture, so no mass and no collisions:
+  // they are only drawn, and can never change how a horse races.
+  readonly decor: Part[] = [];
   readonly limbs: Limb[] = [];
   private readonly bodies: Body[] = [];
   private readonly bus = new SignalBus();
@@ -74,6 +81,8 @@ export class PhysicsHorse {
     this.addBox(this.torso, torsoLength / 2, torsoHeight / 2, 0, 0, 0, hsl(dna.hue, 55, 50));
     this.addBox(this.torso, 0.1, 0.45, torsoLength / 2 - 0.1, torsoHeight / 2 + 0.3, -0.5, hsl(dna.hue, 55, 50));
     this.addBox(this.torso, 0.3, 0.14, torsoLength / 2 + 0.35, torsoHeight / 2 + 0.6, -0.2, hsl(dna.hue, 55, 40));
+    this.addFace(dna);
+    this.addTail(dna);
 
     // --- Two legs: one near the front of the torso, one near the rear ---
     const hipOffset = torsoLength / 2 - 0.2;
@@ -87,6 +96,55 @@ export class PhysicsHorse {
     for (const limb of this.limbs) {
       limb.hip.setMaxMotorTorque(hipTorque);
       limb.knee.setMaxMotorTorque(hipTorque * 0.6);
+    }
+  }
+
+  // Eye, nostril, mouth, muzzle and ears, placed relative to the head box.
+  private addFace(dna: HorseDna): void {
+    const headX = dna.torsoLength / 2 + 0.35;
+    const headY = dna.torsoHeight / 2 + 0.6;
+    const headAngle = -0.2;
+    const cos = Math.cos(headAngle);
+    const sin = Math.sin(headAngle);
+
+    // (dx, dy) is a position on the head, in head units; this converts it to torso coordinates.
+    const onHead = (dx: number, dy: number): { x: number; y: number } => ({
+      x: headX + dx * cos - dy * sin,
+      y: headY + dx * sin + dy * cos,
+    });
+    const add = (halfW: number, halfH: number, dx: number, dy: number, tilt: number, color: string): void => {
+      const pos = onHead(dx, dy);
+      this.decor.push({ body: this.torso, halfW, halfH, cx: pos.x, cy: pos.y, angle: headAngle + tilt, color });
+    };
+
+    add(0.1, 0.15, 0.2, -0.01, 0, hsl(dna.hue, 50, 30)); // muzzle
+    add(0.015, 0.022, 0.27, 0.05, 0, "#1a1008"); // nostril
+    add(0.085, 0.008, 0.2, -0.07, 0, "#1a1008"); // mouth
+    add(0.035, 0.035, 0.0, 0.05, 0, "#ffffff"); // eye white
+    add(0.02, 0.02, 0.01, 0.05, 0, "#111111"); // pupil
+    const earBase = 0.14 + dna.earSize / 2 - 0.02;
+    add(0.04, dna.earSize / 2, -0.12, earBase, 0.25, hsl(dna.hue, 55, 30)); // far ear
+    add(0.045, dna.earSize / 2, -0.2, earBase, 0.1, hsl(dna.hue, 55, 38)); // near ear
+  }
+
+  // A drooping two-piece tail hanging from the rear of the torso.
+  private addTail(dna: HorseDna): void {
+    let anchorX = -dna.torsoLength / 2;
+    let anchorY = dna.torsoHeight / 2 - 0.1;
+    const segment = dna.tailLength / 2;
+    const angles = [-0.5, -0.9]; // each piece droops a bit more than the last
+    for (const a of angles) {
+      this.decor.push({
+        body: this.torso,
+        halfW: 0.05,
+        halfH: segment / 2,
+        cx: anchorX + (segment / 2) * Math.sin(a),
+        cy: anchorY - (segment / 2) * Math.cos(a),
+        angle: a,
+        color: hsl(dna.hue, 45, 20),
+      });
+      anchorX += segment * Math.sin(a);
+      anchorY -= segment * Math.cos(a);
     }
   }
 

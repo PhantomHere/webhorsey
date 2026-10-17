@@ -1,4 +1,5 @@
 import type { Mode } from "../core/Mode";
+import { drawHorse } from "../render/drawHorse";
 import type { Racer } from "../race/Racer";
 import { createRace } from "../race/createRace";
 import type { PhysicsRace } from "../race/PhysicsRace";
@@ -7,7 +8,7 @@ const SPEEDS = [1, 2, 4]; // playback speed options
 
 export class RaceMode implements Mode {
   private race: PhysicsRace = createRace();
-  private speedIndex = 1;
+  private speedIndex = 0; // starts at 1x
 
   // Arrow function so "this" still points at the mode when the browser calls it.
   private onKeyDown = (e: KeyboardEvent): void => {
@@ -73,8 +74,12 @@ export class RaceMode implements Mode {
       ctx.fillStyle = "#00000033";
       ctx.fillRect(0, groundY, width, 2);
 
-      this.drawLabel(ctx, racer, 12, groundY - laneH / 2 + 10);
       this.drawRacer(ctx, racer, startX, groundY, scale);
+
+      // Name panel on top, so a horse that walks backward slides out of sight behind it.
+      ctx.fillStyle = i % 2 === 0 ? "#2d5a27" : "#27501f";
+      ctx.fillRect(0, top + i * laneH, labelW - 20, laneH);
+      this.drawLabel(ctx, racer, 12, groundY - laneH / 2 + 10);
     });
 
     // Header
@@ -118,6 +123,7 @@ export class RaceMode implements Mode {
   private describe(racer: Racer): string {
     if (racer.status === "finished") return `${racer.finishTime.toFixed(2)} s`;
     if (racer.status === "fell") return `fell at ${racer.distance.toFixed(1)} m`;
+    if (racer.distance < -0.5) return `walked backward to ${racer.distance.toFixed(1)} m`;
     return `stopped at ${racer.distance.toFixed(1)} m`;
   }
 
@@ -148,15 +154,7 @@ export class RaceMode implements Mode {
   ): void {
     ctx.save();
     ctx.globalAlpha = racer.status === "fell" ? 0.5 : 1;
-    for (const part of racer.horse.parts) {
-      const p = part.body.getWorldPoint({ x: part.cx, y: part.cy });
-      ctx.save();
-      ctx.translate(startX + p.x * scale, groundY - p.y * scale);
-      ctx.rotate(-(part.body.getAngle() + part.angle));
-      ctx.fillStyle = part.color;
-      ctx.fillRect(-part.halfW * scale, -part.halfH * scale, part.halfW * 2 * scale, part.halfH * 2 * scale);
-      ctx.restore();
-    }
+    drawHorse(ctx, racer.horse, startX, groundY, scale);
     ctx.restore();
   }
 }

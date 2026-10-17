@@ -29,9 +29,9 @@ export class Racer {
     this.horse = new PhysicsHorse(this.world, 0, 0, decodeGenome(genome));
   }
 
-  // Meters travelled from the start line (never negative).
+  // Meters from the start line. Negative means the horse walked backward.
   get distance(): number {
-    return Math.max(0, this.horse.torso.getPosition().x);
+    return this.horse.torso.getPosition().x;
   }
 
   // Advance one fixed physics step. stepIndex counts steps since the race began.
