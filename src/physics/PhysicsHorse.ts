@@ -14,6 +14,8 @@ export interface HorseDna {
   muscle: number; // multiplier for how much torque the joints can produce
   hipSwing: number; // radians the hip swings each way while moving
   kneeBend: number; // radians the knee folds during the recovery stroke
+  stiffness: number; // how fast the joint motors chase their targets (gait speed)
+  hue: number; // body color, 0-360 (cosmetic)
 }
 
 export const DEFAULT_DNA: HorseDna = {
@@ -25,6 +27,8 @@ export const DEFAULT_DNA: HorseDna = {
   muscle: 2.0,
   hipSwing: 0.25,
   kneeBend: 0.6,
+  stiffness: 12,
+  hue: 25,
 };
 
 // Signal wiring for a two-legged gait. Chain of events:
@@ -32,6 +36,8 @@ export const DEFAULT_DNA: HorseDna = {
 //   each finish triggers the other leg's opposite phase, and the cycle repeats.
 const FRONT_SIGNALS: LimbSignals = { ftobReact: 4, ftobEvent: 1, btofReact: 2, btofEvent: 3 };
 const REAR_SIGNALS: LimbSignals = { ftobReact: 1, ftobEvent: 4, btofReact: 3, btofEvent: 2 };
+
+const hsl = (h: number, s: number, l: number): string => `hsl(${h.toFixed(0)}, ${s}%, ${l}%)`;
 
 const DENSITY = 40; // kg per square meter (the world is 2D)
 const NO_SELF_COLLISION = -1; // fixtures that share a negative group never collide
@@ -65,9 +71,9 @@ export class PhysicsHorse {
     // --- Torso (also carries a simple rigid neck and head for now) ---
     this.torso = world.createBody({ type: "dynamic", position: { x, y: torsoY } });
     this.bodies.push(this.torso);
-    this.addBox(this.torso, torsoLength / 2, torsoHeight / 2, 0, 0, 0, "#c47a3a");
-    this.addBox(this.torso, 0.1, 0.45, torsoLength / 2 - 0.1, torsoHeight / 2 + 0.3, -0.5, "#c47a3a");
-    this.addBox(this.torso, 0.3, 0.14, torsoLength / 2 + 0.35, torsoHeight / 2 + 0.6, -0.2, "#a8642c");
+    this.addBox(this.torso, torsoLength / 2, torsoHeight / 2, 0, 0, 0, hsl(dna.hue, 55, 50));
+    this.addBox(this.torso, 0.1, 0.45, torsoLength / 2 - 0.1, torsoHeight / 2 + 0.3, -0.5, hsl(dna.hue, 55, 50));
+    this.addBox(this.torso, 0.3, 0.14, torsoLength / 2 + 0.35, torsoHeight / 2 + 0.6, -0.2, hsl(dna.hue, 55, 40));
 
     // --- Two legs: one near the front of the torso, one near the rear ---
     const hipOffset = torsoLength / 2 - 0.2;
@@ -98,14 +104,14 @@ export class PhysicsHorse {
     // Upper leg: its origin sits at the hip, so rotating the body swings the leg around the hip.
     const upper = world.createBody({ type: "dynamic", position: { x: hipX, y: hipY }, angle });
     this.bodies.push(upper);
-    this.addBox(upper, legThickness / 2, segment / 2, 0, -segment / 2, 0, "#7a4a22", 0.6);
+    this.addBox(upper, legThickness / 2, segment / 2, 0, -segment / 2, 0, hsl(dna.hue, 45, 32), 0.6);
 
     // Lower leg: its origin sits at the knee, which is at the end of the upper leg.
     const kneeX = hipX + segment * Math.sin(angle);
     const kneeY = hipY - segment * Math.cos(angle);
     const lower = world.createBody({ type: "dynamic", position: { x: kneeX, y: kneeY }, angle });
     this.bodies.push(lower);
-    this.addBox(lower, legThickness / 2, segment / 2, 0, -segment / 2, 0, "#5e3a1a", 1.0);
+    this.addBox(lower, legThickness / 2, segment / 2, 0, -segment / 2, 0, hsl(dna.hue, 45, 24), 1.0);
 
     const hip = world.createJoint(
       new RevoluteJoint(
@@ -128,7 +134,7 @@ export class PhysicsHorse {
       throw new Error("Could not create leg joints");
     }
 
-    this.limbs.push(new Limb(hip, knee, angle, signals, dna.hipSwing, dna.kneeBend));
+    this.limbs.push(new Limb(hip, knee, angle, signals, dna.hipSwing, dna.kneeBend, dna.stiffness));
   }
 
   private addBox(

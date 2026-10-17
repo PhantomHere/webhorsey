@@ -16,7 +16,7 @@ resize();
 const modes = new ModeManager();
 modes.register("race", new RaceMode());
 modes.register("horsetest", new HorseTestMode());
-modes.switchTo("horsetest");
+modes.switchTo("race");
 
 // Temporary shortcuts to switch modes: 1 = race, 2 = horse test.
 window.addEventListener("keydown", (e) => {

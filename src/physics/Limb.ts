@@ -13,7 +13,6 @@ export interface LimbSignals {
   btofEvent: number;
 }
 
-const STIFFNESS = 12; // how aggressively the motors chase their targets
 const REACH_TOLERANCE = 0.08; // radians: "close enough" to count a phase as complete
 const MAX_PHASE_TIME = 0.5; // seconds: give up waiting for the joint after this long
 
@@ -34,6 +33,7 @@ export class Limb {
   private readonly signals: LimbSignals;
   private readonly hipSwing: number; // how far the hip swings each way (radians)
   private readonly kneeBend: number; // how far the knee folds during recovery (radians)
+  private readonly stiffness: number; // how aggressively the motors chase their targets
   private hipTarget: number;
   private kneeTarget = 0;
   private phaseTime = 0;
@@ -46,6 +46,7 @@ export class Limb {
     signals: LimbSignals,
     hipSwing: number,
     kneeBend: number,
+    stiffness: number,
   ) {
     this.hip = hip;
     this.knee = knee;
@@ -53,6 +54,7 @@ export class Limb {
     this.signals = signals;
     this.hipSwing = hipSwing;
     this.kneeBend = kneeBend;
+    this.stiffness = stiffness;
   }
 
   update(bus: SignalBus, dt: number): void {
@@ -80,8 +82,8 @@ export class Limb {
     }
 
     // 4. Drive both joints toward their targets.
-    this.hip.setMotorSpeed((this.hipTarget - this.hip.getJointAngle()) * STIFFNESS);
-    this.knee.setMotorSpeed((this.kneeTarget - this.knee.getJointAngle()) * STIFFNESS);
+    this.hip.setMotorSpeed((this.hipTarget - this.hip.getJointAngle()) * this.stiffness);
+    this.knee.setMotorSpeed((this.kneeTarget - this.knee.getJointAngle()) * this.stiffness);
   }
 
   private begin(phase: Phase): void {

@@ -1,32 +1,31 @@
 import type { Mode } from "../core/Mode";
-import { Race } from "../race/Race";
-import { createHorses } from "../race/horseFactory";
+import type { Racer } from "../race/Racer";
+import { createRace } from "../race/createRace";
+import type { PhysicsRace } from "../race/PhysicsRace";
 
-const HORSE_COUNT = 5;
-const TRACK_LENGTH = 600; // meters
+const SPEEDS = [1, 2, 4]; // playback speed options
 
 export class RaceMode implements Mode {
-  private race = new Race(createHorses(HORSE_COUNT), TRACK_LENGTH);
+  private race: PhysicsRace = createRace();
+  private speedIndex = 1;
 
   // Arrow function so "this" still points at the mode when the browser calls it.
   private onKeyDown = (e: KeyboardEvent): void => {
-    if (e.code !== "Space") return;
-    e.preventDefault();
-
-    if (this.race.state === "waiting") {
-      this.race.start();
-    } else if (this.race.state === "finished") {
-      this.newRace();
+    if (e.code === "Space") {
+      e.preventDefault();
+      if (this.race.state === "waiting") {
+        this.race.start();
+      } else if (this.race.state === "finished") {
+        this.race = createRace();
+      }
+    } else if (e.code === "KeyF") {
+      this.speedIndex = (this.speedIndex + 1) % SPEEDS.length;
     }
   };
 
-  private newRace(): void {
-    this.race = new Race(createHorses(HORSE_COUNT), TRACK_LENGTH);
-  }
-
   enter(): void {
     window.addEventListener("keydown", this.onKeyDown);
-    this.newRace();
+    this.race = createRace();
   }
 
   exit(): void {
@@ -34,67 +33,70 @@ export class RaceMode implements Mode {
   }
 
   update(dt: number): void {
-    this.race.update(dt);
+    // Playback speed only changes how many fixed steps run per frame, never the outcome.
+    this.race.update(dt * (SPEEDS[this.speedIndex] ?? 1));
   }
 
   render(ctx: CanvasRenderingContext2D, width: number, height: number): void {
     const race = this.race;
+    const count = race.racers.length;
 
     // Layout
-    const left = 170; // start line x
-    const right = width - 60; // finish line x
-    const top = 80;
-    const bottom = height - 40;
-    const laneH = (bottom - top) / race.horses.length;
+    const labelW = 230;
+    const right = width - 40;
+    const top = 100;
+    const bottom = height - 30;
+    const laneH = (bottom - top) / count;
+    const scale = Math.min(laneH / 2.4, (right - labelW) / race.trackLength); // pixels per meter
+    const startX = labelW + (right - labelW - race.trackLength * scale) / 2;
+    const finishX = startX + race.trackLength * scale;
 
-    // Background
     ctx.fillStyle = "#1b3a17";
     ctx.fillRect(0, 0, width, height);
 
-    // Lanes
-    race.horses.forEach((horse, i) => {
-      const y = top + i * laneH;
-
+    // Lanes first, then horses on top, so no lane covers a neighbouring horse.
+    for (let i = 0; i < count; i++) {
       ctx.fillStyle = i % 2 === 0 ? "#2d5a27" : "#27501f";
-      ctx.fillRect(0, y, width, laneH);
-
-      // Name + energy bar
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "16px sans-serif";
-      ctx.fillText(horse.name, 12, y + laneH / 2 - 2);
-
-      ctx.fillStyle = "#00000066";
-      ctx.fillRect(12, y + laneH / 2 + 6, 120, 6);
-      ctx.fillStyle = "#7CFC00";
-      ctx.fillRect(12, y + laneH / 2 + 6, 120 * (horse.energy / horse.stats.stamina), 6);
-
-      // Horse (a colored block for now; its front edge is its position)
-      const hx = left + (horse.position / race.trackLength) * (right - left);
-      const hh = Math.min(laneH * 0.6, 30);
-      ctx.fillStyle = horse.color;
-      ctx.fillRect(hx - 44, y + (laneH - hh) / 2, 44, hh);
-    });
+      ctx.fillRect(0, top + i * laneH, width, laneH);
+    }
 
     // Start and finish lines
     ctx.fillStyle = "#ffffff88";
-    ctx.fillRect(left, top, 2, bottom - top);
+    ctx.fillRect(startX, top, 2, bottom - top);
     ctx.fillStyle = "#ffffff";
-    ctx.fillRect(right, top, 4, bottom - top);
+    ctx.fillRect(finishX, top, 4, bottom - top);
+
+    race.racers.forEach((racer, i) => {
+      const groundY = top + (i + 1) * laneH - 12;
+
+      // Ground line for this lane
+      ctx.fillStyle = "#00000033";
+      ctx.fillRect(0, groundY, width, 2);
+
+      this.drawLabel(ctx, racer, 12, groundY - laneH / 2 + 10);
+      this.drawRacer(ctx, racer, startX, groundY, scale);
+    });
 
     // Header
     ctx.fillStyle = "#ffffff";
     ctx.font = "24px sans-serif";
     if (race.state === "waiting") {
-      ctx.fillText("Press SPACE to start the race", 20, 45);
+      ctx.fillText("Press SPACE to start the race", 20, 40);
     } else if (race.state === "running") {
-      ctx.fillText(`Race time: ${race.time.toFixed(1)} s`, 20, 45);
+      ctx.fillText(
+        race.raceTime < 0 ? "Get ready..." : `Race time: ${race.raceTime.toFixed(1)} s`,
+        20,
+        40,
+      );
     } else {
-      ctx.fillText("Finished! Press SPACE for a new race", 20, 45);
+      ctx.fillText("Finished! Press SPACE for a new race", 20, 40);
     }
+    ctx.font = "16px sans-serif";
+    ctx.fillText(`[F] playback speed: ${SPEEDS[this.speedIndex]}x   [2] horse test`, 20, 70);
 
     // Results panel
     if (race.state === "finished") {
-      const panelW = 380;
+      const panelW = 460;
       const panelH = 70 + race.results.length * 30;
       const px = (width - panelW) / 2;
       const py = (height - panelH) / 2;
@@ -107,13 +109,54 @@ export class RaceMode implements Mode {
       ctx.fillText("Results", px + 20, py + 38);
 
       ctx.font = "18px sans-serif";
-      race.results.forEach((horse, i) => {
-        ctx.fillText(
-          `${i + 1}. ${horse.name}  -  ${horse.finishTime.toFixed(2)} s`,
-          px + 20,
-          py + 70 + i * 30,
-        );
+      race.results.forEach((racer, i) => {
+        ctx.fillText(`${i + 1}. ${racer.name}  -  ${this.describe(racer)}`, px + 20, py + 70 + i * 30);
       });
     }
+  }
+
+  private describe(racer: Racer): string {
+    if (racer.status === "finished") return `${racer.finishTime.toFixed(2)} s`;
+    if (racer.status === "fell") return `fell at ${racer.distance.toFixed(1)} m`;
+    return `stopped at ${racer.distance.toFixed(1)} m`;
+  }
+
+  private drawLabel(ctx: CanvasRenderingContext2D, racer: Racer, x: number, y: number): void {
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "16px sans-serif";
+    ctx.fillText(racer.name, x, y);
+
+    ctx.font = "14px sans-serif";
+    ctx.fillStyle = racer.status === "fell" ? "#ff8a80" : racer.status === "finished" ? "#b9f6ca" : "#dddddd";
+    const text =
+      racer.status === "running"
+        ? `${racer.distance.toFixed(1)} m`
+        : racer.status === "finished"
+          ? "FINISHED"
+          : racer.status === "fell"
+            ? "FELL"
+            : "STOPPED";
+    ctx.fillText(text, x, y + 20);
+  }
+
+  private drawRacer(
+    ctx: CanvasRenderingContext2D,
+    racer: Racer,
+    startX: number,
+    groundY: number,
+    scale: number,
+  ): void {
+    ctx.save();
+    ctx.globalAlpha = racer.status === "fell" ? 0.5 : 1;
+    for (const part of racer.horse.parts) {
+      const p = part.body.getWorldPoint({ x: part.cx, y: part.cy });
+      ctx.save();
+      ctx.translate(startX + p.x * scale, groundY - p.y * scale);
+      ctx.rotate(-(part.body.getAngle() + part.angle));
+      ctx.fillStyle = part.color;
+      ctx.fillRect(-part.halfW * scale, -part.halfH * scale, part.halfW * 2 * scale, part.halfH * 2 * scale);
+      ctx.restore();
+    }
+    ctx.restore();
   }
 }
