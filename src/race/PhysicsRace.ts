@@ -4,7 +4,7 @@ import type { Racer } from "./Racer";
 export type RaceState = "waiting" | "running" | "finished";
 
 // After the first horse finishes, the others get this long to cross the line.
-const GRACE_AFTER_FIRST_FINISH = 10; // seconds
+const GRACE_AFTER_FIRST_FINISH = 15; // seconds
 
 export class PhysicsRace {
   readonly racers: Racer[];

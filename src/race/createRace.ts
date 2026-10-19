@@ -3,8 +3,8 @@ import { PhysicsRace } from "./PhysicsRace";
 import { Racer } from "./Racer";
 
 export const HORSE_COUNT = 5;
-export const TRACK_LENGTH = 12; // meters
-export const TIME_LIMIT = 60; // seconds after the gait starts
+export const TRACK_LENGTH = 100; // meters
+export const TIME_LIMIT = 100; // seconds after the gait starts
 
 const NAMES = [
   "Thunder Hoof",

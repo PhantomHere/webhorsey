@@ -34,6 +34,8 @@ export class Limb {
   private readonly hipSwing: number; // how far the hip swings each way (radians)
   private readonly kneeBend: number; // how far the knee folds during recovery (radians)
   private readonly stiffness: number; // how aggressively the motors chase their targets
+  private readonly restAngle: number; // the standing pose of the hip
+  private resting = false;
   private hipTarget: number;
   private kneeTarget = 0;
   private phaseTime = 0;
@@ -50,6 +52,7 @@ export class Limb {
   ) {
     this.hip = hip;
     this.knee = knee;
+    this.restAngle = restAngle;
     this.hipTarget = restAngle; // until told otherwise, just hold the standing pose
     this.signals = signals;
     this.hipSwing = hipSwing;
@@ -57,7 +60,21 @@ export class Limb {
     this.stiffness = stiffness;
   }
 
+  // Stop walking: forget any phase in progress and go back to the standing pose.
+  rest(): void {
+    this.resting = true;
+    this.phase = "idle";
+    this.queued = null;
+    this.hipTarget = this.restAngle;
+    this.kneeTarget = 0;
+  }
+
   update(bus: SignalBus, dt: number): void {
+    if (this.resting) {
+      this.drive();
+      return;
+    }
+
     // 1. Listen.
     if (bus.hears(this.signals.ftobReact)) {
       this.queued = "ftob";
@@ -81,7 +98,11 @@ export class Limb {
       this.queued = null;
     }
 
-    // 4. Drive both joints toward their targets.
+    this.drive();
+  }
+
+  // Drive both joints toward their targets.
+  private drive(): void {
     this.hip.setMotorSpeed((this.hipTarget - this.hip.getJointAngle()) * this.stiffness);
     this.knee.setMotorSpeed((this.kneeTarget - this.knee.getJointAngle()) * this.stiffness);
   }

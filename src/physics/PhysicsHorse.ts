@@ -18,6 +18,7 @@ export interface HorseDna {
   hue: number; // body color, 0-360 (cosmetic)
   earSize: number; // ear height in meters (cosmetic)
   tailLength: number; // tail length in meters (cosmetic)
+  coatLight: number; // coat lightness in percent (cosmetic)
 }
 
 export const DEFAULT_DNA: HorseDna = {
@@ -33,6 +34,7 @@ export const DEFAULT_DNA: HorseDna = {
   hue: 25,
   earSize: 0.2,
   tailLength: 0.7,
+  coatLight: 50,
 };
 
 // Signal wiring for a two-legged gait. Chain of events:
@@ -42,6 +44,12 @@ const FRONT_SIGNALS: LimbSignals = { ftobReact: 4, ftobEvent: 1, btofReact: 2, b
 const REAR_SIGNALS: LimbSignals = { ftobReact: 1, ftobEvent: 4, btofReact: 3, btofEvent: 2 };
 
 const hsl = (h: number, s: number, l: number): string => `hsl(${h.toFixed(0)}, ${s}%, ${l}%)`;
+
+// Balance aid: resistance to spinning, applied to the torso. Without it most horses flip over.
+// (Measured over 250 random horses: it cut falls and made horses faster.)
+export const TUNING = {
+  angularDamping: 20,
+};
 
 const DENSITY = 40; // kg per square meter (the world is 2D)
 const NO_SELF_COLLISION = -1; // fixtures that share a negative group never collide
@@ -78,9 +86,10 @@ export class PhysicsHorse {
     // --- Torso (also carries a simple rigid neck and head for now) ---
     this.torso = world.createBody({ type: "dynamic", position: { x, y: torsoY } });
     this.bodies.push(this.torso);
-    this.addBox(this.torso, torsoLength / 2, torsoHeight / 2, 0, 0, 0, hsl(dna.hue, 55, 50));
-    this.addBox(this.torso, 0.1, 0.45, torsoLength / 2 - 0.1, torsoHeight / 2 + 0.3, -0.5, hsl(dna.hue, 55, 50));
-    this.addBox(this.torso, 0.3, 0.14, torsoLength / 2 + 0.35, torsoHeight / 2 + 0.6, -0.2, hsl(dna.hue, 55, 40));
+    this.torso.setAngularDamping(TUNING.angularDamping);
+    this.addBox(this.torso, torsoLength / 2, torsoHeight / 2, 0, 0, 0, hsl(dna.hue, 62, dna.coatLight));
+    this.addBox(this.torso, 0.1, 0.45, torsoLength / 2 - 0.1, torsoHeight / 2 + 0.3, -0.5, hsl(dna.hue, 62, dna.coatLight));
+    this.addBox(this.torso, 0.3, 0.14, torsoLength / 2 + 0.35, torsoHeight / 2 + 0.6, -0.2, hsl(dna.hue, 62, dna.coatLight - 6));
     this.addFace(dna);
     this.addTail(dna);
 
@@ -117,14 +126,14 @@ export class PhysicsHorse {
       this.decor.push({ body: this.torso, halfW, halfH, cx: pos.x, cy: pos.y, angle: headAngle + tilt, color });
     };
 
-    add(0.1, 0.15, 0.2, -0.01, 0, hsl(dna.hue, 50, 30)); // muzzle
+    add(0.1, 0.15, 0.2, -0.01, 0, hsl(dna.hue, 62, dna.coatLight - 3)); // muzzle
     add(0.015, 0.022, 0.27, 0.05, 0, "#1a1008"); // nostril
     add(0.085, 0.008, 0.2, -0.07, 0, "#1a1008"); // mouth
     add(0.035, 0.035, 0.0, 0.05, 0, "#ffffff"); // eye white
-    add(0.02, 0.02, 0.01, 0.05, 0, "#111111"); // pupil
+    add(0.02, 0.02, 0.01, 0.05, 0, "#4a4ae0"); // pupil
     const earBase = 0.14 + dna.earSize / 2 - 0.02;
-    add(0.04, dna.earSize / 2, -0.12, earBase, 0.25, hsl(dna.hue, 55, 30)); // far ear
-    add(0.045, dna.earSize / 2, -0.2, earBase, 0.1, hsl(dna.hue, 55, 38)); // near ear
+    add(0.04, dna.earSize / 2, -0.12, earBase, 0.25, hsl(dna.hue, 55, dna.coatLight - 20)); // far ear
+    add(0.045, dna.earSize / 2, -0.2, earBase, 0.1, hsl(dna.hue, 55, dna.coatLight - 14)); // near ear
   }
 
   // A drooping two-piece tail hanging from the rear of the torso.
@@ -141,7 +150,7 @@ export class PhysicsHorse {
         cx: anchorX + (segment / 2) * Math.sin(a),
         cy: anchorY - (segment / 2) * Math.cos(a),
         angle: a,
-        color: hsl(dna.hue, 45, 20),
+        color: hsl(dna.hue, 55, dna.coatLight - 24),
       });
       anchorX += segment * Math.sin(a);
       anchorY -= segment * Math.cos(a);
@@ -162,14 +171,24 @@ export class PhysicsHorse {
     // Upper leg: its origin sits at the hip, so rotating the body swings the leg around the hip.
     const upper = world.createBody({ type: "dynamic", position: { x: hipX, y: hipY }, angle });
     this.bodies.push(upper);
-    this.addBox(upper, legThickness / 2, segment / 2, 0, -segment / 2, 0, hsl(dna.hue, 45, 32), 0.6);
+    this.addBox(upper, legThickness / 2, segment / 2, 0, -segment / 2, 0, hsl(dna.hue, 52, dna.coatLight + 8), 0.6);
 
     // Lower leg: its origin sits at the knee, which is at the end of the upper leg.
     const kneeX = hipX + segment * Math.sin(angle);
     const kneeY = hipY - segment * Math.cos(angle);
     const lower = world.createBody({ type: "dynamic", position: { x: kneeX, y: kneeY }, angle });
     this.bodies.push(lower);
-    this.addBox(lower, legThickness / 2, segment / 2, 0, -segment / 2, 0, hsl(dna.hue, 45, 24), 1.0);
+    this.addBox(lower, legThickness / 2, segment / 2, 0, -segment / 2, 0, hsl(dna.hue, 52, dna.coatLight + 8), 1.0);
+    // A dark hoof at the bottom of the leg. Drawn only: no physics, so it changes nothing about the race.
+    this.decor.push({
+      body: lower,
+      halfW: legThickness * 0.7,
+      halfH: 0.07,
+      cx: 0,
+      cy: -segment + 0.07,
+      angle: 0,
+      color: "#3b2412",
+    });
 
     const hip = world.createJoint(
       new RevoluteJoint(
@@ -217,6 +236,17 @@ export class PhysicsHorse {
   start(): void {
     this.bus.emit(3);
     this.bus.emit(4);
+  }
+
+  // Pull up: every limb goes back to the standing pose and the body slows to a halt.
+  // Used when a horse crosses the finish line.
+  stop(): void {
+    for (const limb of this.limbs) {
+      limb.rest();
+    }
+    for (const body of this.bodies) {
+      body.setLinearDamping(3);
+    }
   }
 
   update(dt: number): void {

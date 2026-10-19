@@ -17,14 +17,15 @@ const GENES: GeneSpec[] = [
   { key: "torsoHeight", min: 0.6, max: 1.0 },
   { key: "legLength", min: 0.9, max: 1.7 },
   { key: "legThickness", min: 0.1, max: 0.2 },
-  { key: "stance", min: 0.1, max: 0.35 },
+  { key: "stance", min: 0.15, max: 0.4 },
   { key: "muscle", min: 0.8, max: 3.0 },
   { key: "hipSwing", min: 0.1, max: 0.3 },
-  { key: "kneeBend", min: 0.3, max: 1.1 },
-  { key: "stiffness", min: 6, max: 16 },
-  { key: "hue", min: 0, max: 360 }, // cosmetic: body color
+  { key: "kneeBend", min: 0.7, max: 1.4 },
+  { key: "stiffness", min: 16, max: 36 },
+  { key: "hue", min: 18, max: 40 }, // cosmetic: coat color (chestnut to gold)
   { key: "earSize", min: 0.12, max: 0.32 }, // cosmetic
   { key: "tailLength", min: 0.4, max: 1.1 }, // cosmetic
+  { key: "coatLight", min: 40, max: 58 }, // cosmetic: coat lightness in percent
 ];
 
 export const GENE_COUNT = GENES.length;
