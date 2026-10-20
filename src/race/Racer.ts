@@ -1,10 +1,15 @@
 import { Edge, World } from "planck";
 import { PhysicsHorse } from "../physics/PhysicsHorse";
 import { decodeGenome } from "../genome/Genome";
+import { mulberry32 } from "../util/random";
 import type { Genome } from "../genome/Genome";
 
 export const STEP = 1 / 60; // fixed physics step, in seconds
 export const GAIT_START_TIME = 1; // seconds of standing still before the gait starts
+// Each horse's "reaction time": it starts moving up to this many physics steps late.
+// The gait is very sensitive to timing, so this is what makes a race unpredictable.
+const MAX_START_JITTER = 12;
+
 const DOWN_TILT = (75 * Math.PI) / 180; // tilted past this = the horse is on the ground
 
 export type RacerStatus = "running" | "finished" | "timeout";
@@ -20,11 +25,14 @@ export class Racer {
 
   private readonly world = new World({ x: 0, y: -10 });
   private readonly trackLength: number;
+  private readonly gaitStartStep: number;
 
-  constructor(name: string, genome: Genome, trackLength: number) {
+  // seed picks this horse's reaction time. Same genome + same seed = exactly the same race.
+  constructor(name: string, genome: Genome, trackLength: number, seed = 0) {
     this.name = name;
     this.genome = genome;
     this.trackLength = trackLength;
+    this.gaitStartStep = Math.round(GAIT_START_TIME / STEP) + Math.floor(mulberry32(seed)() * (MAX_START_JITTER + 1));
     this.world.createBody().createFixture(new Edge({ x: -1000, y: 0 }, { x: 1000, y: 0 }), { friction: 1 });
     this.horse = new PhysicsHorse(this.world, 0, 0, decodeGenome(genome));
   }
@@ -43,7 +51,7 @@ export class Racer {
   // Advance one fixed physics step. stepIndex counts steps since the race began.
   // Every horse keeps simulating for the whole race, even after it falls. After crossing the line it pulls up.
   step(stepIndex: number): void {
-    if (stepIndex === Math.round(GAIT_START_TIME / STEP)) {
+    if (stepIndex === this.gaitStartStep) {
       this.horse.start();
     }
     this.horse.update(STEP);
